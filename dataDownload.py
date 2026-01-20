@@ -19,14 +19,14 @@ async def connect_ais_stream():
         "FilterMessageTypes": ["PositionReport", "ShipStaticData"]
     }
 
-    print("Connecting to AISStream... (Collecting 50 messages)")
+    print("Connecting to AISStream... Collecting messages)")
     
     try:
         async with websockets.connect(url) as ws:
             await ws.send(json.dumps(sub_msg))
             
             count = 0
-            while count < 50:
+            while count < 300:
                 raw = await ws.recv()
                 msg = json.loads(raw)
                 
@@ -42,8 +42,8 @@ async def connect_ais_stream():
 
     except Exception as e:
         print(f"Connection ended: {e}")
-    
-   save_data(ship_data)
+
+    save_data(ship_data)
 
 def parse_message(msg):
     meta = msg.get("MetaData", {})
@@ -56,20 +56,26 @@ def parse_message(msg):
         "ShipName": meta.get("ShipName", "Unknown"),
         "Latitude": meta.get("latitude"),
         "Longitude": meta.get("longitude"),
-        "Cog": meta.get("Cog"),
-        "TrueHeading": meta.get("TrueHeading"),
+        "Cog": None,
+        "TrueHeading": None, 
         "ShipType": None,
         "Draught": None,
         "Length": meta.get("Length"),
-        "Time": datetime.now().isoformat()
     }
 
     # Extract specific data based on message type
     inner_msg = msg.get("Message", {})
-    if "ShipStaticData" in inner_msg:
+    if "PositionReport" in inner_msg:
+        pos = inner_msg["PositionReport"]
+        data["Cog"] = pos.get("Cog")
+        data["TrueHeading"] = pos.get("TrueHeading")
+        data["Status"] = pos.get("NavigationalStatus")
+        data["Length"] = pos.get("")
+    elif "ShipStaticData" in inner_msg:
         static = inner_msg["ShipStaticData"]
         data["ShipType"] = static.get("Type")
         data["Draught"] = static.get("MaximumStaticDraught")
+        data["Dimensions"]
     
     return data
 
@@ -81,14 +87,14 @@ def save_data(data_list):
     df = pd.DataFrame(data_list)
     
     # FIX FOR KEYERROR: Ensure these columns exist even if no data was found
-    for col in ['ShipType', 'Draught', 'ShipName']:
+    for col in ['ShipType', 'Draught', 'ShipName', 'Cog', 'TrueHeading']:
         if col not in df.columns:
             df[col] = None
 
     # Group by MMSI to combine Position and Static data
     df_final = df.groupby('MMSI').first().reset_index()
     
-    df_final.to_csv("gulf_ships.csv", index=False)
+    df_final.to_csv("gulf_ships_BIG.csv", index=False)
     print(f"\nSaved {len(df_final)} unique ships to 'gulf_ships.csv'")
     print(df_final[['MMSI', 'ShipName', 'ShipType', 'Draught']].head())
 
